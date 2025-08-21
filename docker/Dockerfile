@@ -1,9 +1,11 @@
 # Start from a core stack version
 FROM jupyter/scipy-notebook:2022-01-03
+#x86_64-ubuntu-22.04
+#2022-01-03
 #399cbb986c6b
 
-LABEL authors="Mark S. Bartlett"
-LABEL maintainer="bartlett <mark.bartlettjr@Stantec.com>"
+LABEL authors="Curtis Smith"
+LABEL maintainer="curtis.smith@stantec.com>"
 
 COPY docker/stantec-ca.crt /usr/local/share/stantec-ca.crt
 COPY docker/stantec-ca.crt /etc/ssl/certs/stantec-ca.crt
