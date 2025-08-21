@@ -1,0 +1,53 @@
+# Docker
+# Build a Docker image
+# https://docs.microsoft.com/azure/devops/pipelines/languages/docker
+
+trigger:
+  branches:
+    include:
+    - main
+  paths:
+    include:
+    - docker/Dockerfile
+
+resources:
+- repo: self
+
+#tag could be  Build.BuildId or referenced from here:
+#https://docs.microsoft.com/en-us/azure/devops/pipelines/process/run-number?view=azure-devops&tabs=yaml
+#https://docs.microsoft.com/en-us/azure/devops/pipelines/tasks/build/docker?view=azure-devops
+#http://thecodemanual.pl/2020/04/20/how-to-build-docker-image-on-azure-devops
+variables:
+  registry: "digitalsolutada89a6a"
+  imageName1: 'fema-preprocess'
+  tag: 'latest'
+
+stages:
+- stage: Build
+
+  displayName: Build image
+  dependsOn: []
+  pool:
+    vmImage: "ubuntu-latest"
+  variables:
+    - group: service_principal
+
+  jobs:
+  - job: Build
+    steps:
+
+    - task: Docker@2
+      displayName: Build an image
+      inputs:
+        repository: $(imageName1)
+        command: build
+        dockerfile: '**/Dockerfile'
+        buildContext: '$(Build.SourcesDirectory)/docker'
+        tags: |
+         $(tag)
+
+    - task: ShellScript@2
+      inputs:
+        scriptPath: docker/azure-cli-config.sh
+        args: "$(AZURE_CLIENT_ID) $(AZURE_CLIENT_SECRET) $(AZURE_TENANT_ID) $(registry) $(imageName1) $(tag)"
+      displayName: "Push Container Image to the Azure Container Registry"

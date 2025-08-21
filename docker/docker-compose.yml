@@ -1,0 +1,41 @@
+services:
+  test:
+    image: grass-gis-processing:test
+    build:
+      args:
+        - username=${USER}
+        - uid=${UID}
+        - gid=${GID}
+      context: ../
+      dockerfile: docker/Dockerfile
+    deploy:
+      resources:
+    #Number of cpus and memory accessed limits
+        limits:
+          cpus: '4'
+          memory: 16G
+    #volumes Syntax: named_volume_name:/container/path
+    volumes:
+     - ../grassdata:/home/grassdata
+     - ../:/home
+     - ../data:/home/data
+    ports:
+      - "8888:8888"
+    container_name: jupyter_grass_gis
+    environment:
+      - JUPYTER_ENABLE_LAB=1
+      - CHOWN_HOME=1
+      - GISBASE=/usr/lib/grass78
+      - GRASS_OVERWRITE=1
+      - GRASS_FONT=sans
+      - GRASS_RENDER_IMMEDIATE=cairo
+      - GRASS_RENDER_FILE_READ=TRUE
+      - CPL_ZIP_ENCODING=UTF-8
+      - GRASS_SKIP_MAPSET_OWNER_CHECK=1
+      - JUPYTER_ALLOW_INSECURE_WRITES=true 
+      - APP_ENV=CLOUD
+      - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+    user: root
+    command: start-notebook.py 
+             --NotebookApp.notebook_dir=/home/
+    restart: always

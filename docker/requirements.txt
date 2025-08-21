@@ -1,0 +1,9 @@
+numpy==1.24
+pandas==1.5.3
+fiona==1.9.1
+pyproj
+geopandas==0.9.0
+xarray==0.20.1
+rasterio==1.4
+descartes==1.1.0
+papermill==2.3.4

@@ -1,0 +1,6 @@
+jovyan
+grassdata
+data/Rasters/
+data/Vectors/
+docker/stantec-ca.crt
+docker/wincacerts.pem

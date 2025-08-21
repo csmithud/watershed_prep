@@ -1,0 +1,15 @@
+Los_Angeles_boundingbox|legend/line|5|lf|blue|200:200:200|0|line|1
+v_180701050402_NHDPLUS|legend/line|5|lf|red|200:200:200|0|line|227
+v_180701050402_NHDPLUS|legend/line|5|lf|red|200:200:200|0|line|227
+v_Los_Angeles_1m_streams_der_t|legend/line|5|lf|blue|200:200:200|0|line|158
+v_180701050402_NHDPLUS|legend/line|5|lf|red|200:200:200|0|line|227
+v_Los_Angeles_1m_streams_der_t|legend/line|5|lf|blue|200:200:200|0|line|158
+v_Los_Angeles_1m_streams_der_t|legend/line|5|lf|blue|200:200:200|0|line|158
+v_180701050402_NHDPLUS|legend/line|5|lf|red|200:200:200|0|line|227
+v_Los_Angeles_1m_streams_der_t|legend/line|5|lf|blue|200:200:200|0|line|158
+Los_Angeles_watershed_outlets|basic/x|10|lf|red|200:200:200|0|point|1
+v_Los_Angeles_1m_streams_der_t|legend/line|5|lf|blue|200:200:200|0|line|158
+Los_Angeles_watershed_outlets|basic/x|10|lf|red|200:200:200|0|point|1
+Los_Angeles_watershed_outlets_moved|basic/x|10|lf|green|200:200:200|0|point|1
+v_Los_Angeles_1m_streams_der_t|legend/line|5|lf|blue|200:200:200|0|line|158
+Los_Angeles_watershed_outlets_moved|basic/x|5|lf|green|200:200:200|0|point|1
