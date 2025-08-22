@@ -31,14 +31,6 @@ from shapely import geometry
 from skimage.morphology import skeletonize
 from scipy.ndimage import gaussian_filter
 import matplotlib.colors as colors
-if os.environ["APP_ENV"].lower() == "cloud":
-    from azure.storage.blob import BlobServiceClient, generate_account_sas, ResourceTypes, AccountSasPermissions
-    from azure.identity import DefaultAzureCredential
-    from azure.identity import DeviceCodeCredential
-    from azure.keyvault.secrets import SecretClient 
-    from pyspark.sql import SparkSession
-    import pyspark
-    from delta import *
 import datetime
 
 

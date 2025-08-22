@@ -31,14 +31,6 @@ from shapely import geometry
 from skimage.morphology import skeletonize
 from scipy.ndimage import gaussian_filter
 import matplotlib.colors as colors
-if os.environ["APP_ENV"].lower() == "cloud":
-    from azure.storage.blob import BlobServiceClient, generate_account_sas, ResourceTypes, AccountSasPermissions
-    from azure.identity import DefaultAzureCredential
-    from azure.identity import DeviceCodeCredential
-    from azure.keyvault.secrets import SecretClient 
-    from pyspark.sql import SparkSession
-    import pyspark
-    from delta import *
 import datetime
 
 
@@ -85,19 +77,12 @@ def bbox_gdf(gdf:gpd.GeoDataFrame):
     return ','.join(b_box)
 
 def create_grass_session(huc, config,overwrite=False):
-    if os.environ["APP_ENV"].lower() == "local":
-        time = datetime.datetime.now()
-        timestr = time.strftime("%Y%m%d-%H%M%S")
-        log_out_dir = config.log.dir/("huc" + huc)/timestr
-        logger.info("creating timestamped log directory: " + str(log_out_dir))
-        os.makedirs(log_out_dir)
+    time = datetime.datetime.now()
+    timestr = time.strftime("%Y%m%d-%H%M%S")
+    log_out_dir = config.log.dir/("huc" + huc)/timestr
+    logger.info("creating timestamped log directory: " + str(log_out_dir))
+    os.makedirs(log_out_dir)
 
-    if os.environ["APP_ENV"].lower() == "cloud":
-        logger.info("creating temporary log directory")
-        log_out_dir = pl.Path("log")
-        os.makedirs(log_out_dir)
-        logger.info("setting up credentials to write to blob storage")
-        credentials = DefaultAzureCredential()
     config.log.out = log_out_dir
     huc2 = huc[:2]
     huc4 = huc[:4]
@@ -148,37 +133,6 @@ def mask_array(mask_array, array_to_mask):
     array_to_mask[mask.mask]=np.NaN
     return array_to_mask
 
-def download_blob(storage, container, blob, credentials, tmp_dir, overwrite = True):
-    if (tmp_dir/blob).exists() and overwrite == False:
-        print("blob already downloaded")
-        return 
-    
-    pl.Path((tmp_dir/blob).parent).mkdir(parents=True, exist_ok=True)
-    
-    blob_service_client = BlobServiceClient(account_url="https://{}.blob.core.windows.net/".format(storage), credential=credentials)    
-    blob_client = blob_service_client.get_blob_client(container=str(container), blob=str(blob))
-    
-    assert blob_client.exists(), "blob doesn't exist!"
-
-    with open(str(tmp_dir/blob), "wb") as download_file:
-        download_file.write(blob_client.download_blob().readall())
-    
-def connect_to_blob(storage_acct, container, blob, credentials):
-    blob_service_client = BlobServiceClient(account_url="https://{}.blob.core.windows.net/".format(storage_acct), credential=credentials)    
-    blob_client = blob_service_client.get_blob_client(container=str(container), blob=str(blob))
-    return blob_client
-
-def connect_to_container(storage_acct, container, credentials):
-    blob_service_client = BlobServiceClient(account_url="https://{}.blob.core.windows.net/".format(storage_acct), credential=credentials)    
-    container_client = blob_service_client.get_container_client(container=str(container))
-    return container_client
-
-def upload_blob(upload_file_path, storage, container, blob, credentials, overwrite = True):
-    blob_client = connect_to_blob(storage, container, blob, credentials)
-    
-    with open(upload_file_path, "rb") as data:
-        blob_client.upload_blob(data, overwrite=overwrite)
-
 def get_show_string(df, n=20, truncate=True, vertical=False):
     """ returns what pyspark .show() would return, but in a string format"""
     if isinstance(truncate, bool) and truncate:
@@ -186,32 +140,4 @@ def get_show_string(df, n=20, truncate=True, vertical=False):
     else:
         return(df._jdf.showString(n, int(truncate), vertical))
     
-def get_spark_storage(storage_account_name, application_id, password, tenant_id):
-    """
-    Gets a spark session with a connection to an Azure storage account 
-    and the ability to write to Delta. 
-    If the session has already been created, it will be returned.
 
-    Resources: # https://docs.delta.io/latest/quick-start.html https://docs.delta.io/latest/delta-storage.html
-    """
-    # use storage account name as session name
-    builder = (SparkSession.builder.appName(storage_account_name)
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .config("spark.driver.memory", "22g")
-    .config("spark.sql.execution.arrow.pyspark.enabled", "true")
-    .config("spark.driver.extraJavaOptions", "-Dio.netty.tryReflectionSetAccessible=true")
-    .config("spark.executor.extraJavaOptions", "-Dio.netty.tryReflectionSetAccessible=true") 
-    .config("spark.delta.logStore.class", "org.apache.spark.sql.delta.storage.AzureLogStore"))
-    
-    spark = spark = configure_spark_with_delta_pip(builder) \
-    .config("spark.jars.packages", ",".join(["io.delta:delta-core_2.12:1.1.0", "org.apache.hadoop:hadoop-azure:3.3.1", "org.apache.hadoop:hadoop-azure-datalake:3.3.1"])) \
-    .getOrCreate()     
-    
-    spark.conf.set("fs.azure.account.auth.type.{}.dfs.core.windows.net".format(storage_account_name), "OAuth")
-    spark.conf.set("fs.azure.account.oauth.provider.type.{}.dfs.core.windows.net".format(storage_account_name),  "org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider")
-    spark.conf.set("fs.azure.account.oauth2.client.id.{}.dfs.core.windows.net".format(storage_account_name), application_id)
-    spark.conf.set("fs.azure.account.oauth2.client.secret.{}.dfs.core.windows.net".format(storage_account_name), password)
-    spark.conf.set("fs.azure.account.oauth2.client.endpoint.{}.dfs.core.windows.net".format(storage_account_name), "https://login.microsoftonline.com/{}/oauth2/token".format(tenant_id))
-    
-    return spark

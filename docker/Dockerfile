@@ -1,7 +1,7 @@
 # Start from a core stack version
 FROM jupyter/scipy-notebook:2022-01-03
 #x86_64-ubuntu-22.04
-#2022-01-03
+# 2022-01-03
 #399cbb986c6b
 
 LABEL authors="Curtis Smith"
@@ -75,18 +75,5 @@ RUN pip install git+https://github.com/zarch/grass-session.git && \
 
 #switch the user
 USER root
-
-RUN mkdir -p $HOME/grassdata \
-   && grass -c epsg:2163  $HOME/grassdata/test -e \
-   && grass $HOME/grassdata/test/PERMANENT --exec g.extension extension=r.basin -s url=$HOME/grassdata/r.basin-74509.zip \
-   && grass $HOME/grassdata/test/PERMANENT --exec g.extension extension=r.accumulate -s url=$HOME/grassdata/r.accumulate-74509.zip \
-   && grass $HOME/grassdata/test/PERMANENT --exec g.extension extension=r.stream.snap -s url=$HOME/grassdata/r.stream.snap-74509.zip \
-   && grass $HOME/grassdata/test/PERMANENT --exec g.extension extension=r.stream.distance -s url=$HOME/grassdata/r.stream.distance-74509.zip \
-   && grass $HOME/grassdata/test/PERMANENT --exec g.extension extension=r.stream.basins -s url=$HOME/grassdata/r.stream.basins-74509.zip \
-   && grass $HOME/grassdata/test/PERMANENT --exec g.extension extension=r.hypso -s url=$HOME/grassdata/r.hypso-74509.zip \
-   && grass $HOME/grassdata/test/PERMANENT --exec g.extension extension=r.stream.stats -s url=$HOME/grassdata/r.stream.stats-74509.zip \
-   && grass $HOME/grassdata/test/PERMANENT --exec g.extension extension=r.stream.order -s url=$HOME/grassdata/r.stream.order-74509.zip \
-   && grass $HOME/grassdata/test/PERMANENT --exec g.extension extension=r.width.funct -s url=$HOME/grassdata/r.width.funct-74509.zip \
-   && grass $HOME/grassdata/test/PERMANENT --exec g.extension extension=r.traveltime -s url=$HOME/grassdata/r.traveltime-74509.zip
 
 RUN npm config set cafile /usr/local/share/ca-certificates/stantec-ca.crt --global

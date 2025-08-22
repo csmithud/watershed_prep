@@ -36,6 +36,6 @@ services:
       - APP_ENV=CLOUD
       - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
     user: root
-    command: start-notebook.py 
+    command: start-notebook.sh
              --NotebookApp.notebook_dir=/home/
     restart: always

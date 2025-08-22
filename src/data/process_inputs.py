@@ -1,10 +1,6 @@
 from affine import Affine
 import argparse
 import os
-if os.environ["APP_ENV"].lower() == "cloud":
-    from azure.storage.blob import BlobServiceClient
-    from azure.identity import DefaultAzureCredential
-    import azure
 from osgeo import gdal
 import geopandas as gpd
 import inspect
@@ -30,10 +26,6 @@ import fiona
 from matplotlib import pyplot as plt
 import rasterio
 
-if os.getenv("AZ_BATCH_TASK_WORKING_DIR") is not None:
-    sys.path.append(os.getenv("AZ_BATCH_TASK_WORKING_DIR"))
-
-from src.config import create_config
 import src.data.utils as utils
 
 logger = logging.getLogger(__name__)
@@ -109,27 +101,6 @@ def lower_pd_cols(df):
         lower_dict[col] = col.lower()
     df = df.rename(columns = lower_dict)
     return df
-
-# def tnm_query(parameters:'dict', max_iterations=5000) -> list:
-#     '''
-#     Uses TNM API service to get product download links 
-#     returns all relevant data from rest service and must
-#     be filtered by user to get desired content such as download URLs    
-    
-#     :param dict parameters: dictionary of parameters to pass to TNM access API (https://apps.nationalmap.gov/tnmaccess/)    
-#     '''
-    
-#     base_url = 'https://tnmaccess.nationalmap.gov/api/v1/products?'
-        
-#     for i in range(max_iterations):
-#         r = requests.get(base_url, parameters)
-#         if r.status_code == 200:
-#             response = json.loads(r.content)
-#             return response 
-#         else: 
-#             logger.warning("USGS service error for parameter request:" + str(parameters) + "\nTrying again...")
-
-#     logger.error("Unable to receive request for parameters :" + str(parameters))
         
 
 def get_heatmap_filename(all_data_files, huc, model_type):
@@ -586,199 +557,4 @@ def update_res(curr_res, new_res, config):
     config.res = new_res
     return new_res, config
 
-
-def list_blobs(container_name:str, sub_folder_name: str):
-    """
-    Download the files from a given blob.
-    """
-    connection_string = os.getenv('AZURE_STORAGE_CONNECTION_STRING')
-
-    try:
-        # instantiate a BlobServiceClient using a connection string
-        blob_service_client = BlobServiceClient.from_connection_string(conn_str=connection_string)
-
-        # point to the container with the output blobs
-        container_client  = blob_service_client.get_container_client(container_name)
-
-        # retrieve a list of the blobs
-        blob_list = container_client.list_blobs(name_starts_with=sub_folder_name)
-        
-        # filter to those with file extension
-        blob_list = [x.name for x in blob_list if pl.Path(x.name).suffix != ""]
-        logger.info("found {} blobs to download: {}".format(len(blob_list), blob_list))
-            
-        return blob_list
-    
-    except Exception as ex:
-        print(f'Exception: {ex}')
-        
-def main(huc:str, config, overwrite=False):
-    """
-    downloads and processes the HUC boundary, NHD flow lines, DEM files and heatmaps 
-    for a given HUC and spatial refernce (EPSG). 
-    
-    :param huc
-    """    
-    huc_level = len(huc)
-    huc2 = huc[:2]
-    huc4 = huc[:4]
-    huc8 = huc[:8]
-                
-    # save cloud input data locally
-    if os.environ["APP_ENV"].lower() == "cloud":
-        credentials = DefaultAzureCredential()
-        
-        logger.info("downloading nlcd landcover blobs, with overwrite: " + str(overwrite)) 
-        AZURE_STORAGE_CONNECTION_STRING = "DefaultEndpointsProtocol=https;AccountName={};AccountKey={};EndpointSuffix=core.windows.net".format(
-            config.nlcd.storage, os.environ["GRASS_BLOB_KEY"])
-        
-        os.environ["AZURE_STORAGE_CONNECTION_STRING"] = AZURE_STORAGE_CONNECTION_STRING
-        nlcd_blobs = list_blobs(container_name=config.nlcd.container, sub_folder_name=pl.Path(config.nlcd.in_file).parent)
-        for blob in nlcd_blobs:
-            logger.info(f"downloading nlcd blob {blob}")
-            utils.download_blob(config.nlcd.storage, config.nlcd.container, blob, credentials, config.root, overwrite=overwrite)
-              
- 
-    # NHD Download 
-    logger.info("downloading NHD Plus GDB for HUC " + huc4)
-    nhd = download_nhd(
-        huc4=huc4, 
-        gdb_dir=config.root/config.nhd.out_file.gdb, 
-        overwrite=overwrite
-    )
-    local_hucs = gpd.read_file(nhd, layer='WBDHU{}'.format(huc_level))
-    write_file(local_hucs,config.root/config.huc_bounds.in_file)
-    
-    
-    # HUC boundaries 
-    logger.info("reprojecting HUC {0} boundary shapefile to EPSG {1}".format(huc_level,config.sr))
-    get_huc_boundary(
-        gdb_path=config.root/config.nhd.out_file.gdb, 
-        out_file=config.root/config.huc_bounds.out_file.geojson, 
-        huc=huc, 
-        sr=config.sr, 
-        overwrite=overwrite
-    )
-    
-
-    #NHD Flowlines
-    logger.info("extracting NHDFlowline layer and reprojecting")
-    process_nhd(
-        gdb_path=config.root/config.nhd.out_file.gdb,
-        out_file=config.root/config.nhd.out_file.geojson,
-        sr=config.sr, 
-        overwrite=overwrite
-    )
-    
-    # # NLCD
-    # reproject_raster(config.root/config.nlcd.in_file, 
-    #                  config.root/config.nlcd.out_file.vrt,
-    #                  config.sr,
-    #                  overwrite=overwrite)
-    
-    # DEMS
-    huc_boundary = gpd.read_file(config.root/config.huc_bounds.out_file.geojson)
-    dem_coverage = False
-    res=config.res
-    dems=None
-    
-    if os.environ["APP_ENV"].lower() == "cloud":
-        logger.info("checking blob storage for DEM files")    
-        dems = check_cloud_for_dem(config.dem.storage, config.dem.container, credentials, huc)
-        if dems is not None: 
-            logger.info("checking resolution of DEM files found ")
-            new_res = None
-            for r in config.dem_products.keys():
-                new_dems = [f for f in dems if r in f]
-                if len(new_dems) > 0:
-                    new_res = r
-                    break
-            assert new_res is not None, "Unable to find resolution name in DEMs from cloud storage"
-            dems = new_dems
-            logger.info("downloading DEM files: " + str(dems))
-            for f in dems:
-                utils.download_blob(config.dem.storage, config.dem.container, 
-                                    f, credentials, config.root/"raw_dem", overwrite=overwrite)
-            logger.warn("updating config resolution to " + new_res)  
-            res, config = update_res(config.res, new_res, config)
-            logger.info("updated res: " + config.res)
-            dems = [config.root/"raw_dem"/dem for dem in dems]
-            
-            logger.info("reprojecting and merging DEMs")
-            process_dems(
-                raster_paths=dems, 
-                out_vrt=config.root/config.dem.out_file.vrt, 
-                sr=config.sr, 
-                overwrite=overwrite
-            )  
-            
-            logger.info("checking DEM coverage for {}".format(str(config.root/config.dem.out_file.vrt)))
-            dem_coverage = check_dem_coverage(
-                str(config.root/config.dem.out_file.vrt), 
-                str(config.root/config.huc_bounds.out_file.geojson))
-            
-    while dems is None or dem_coverage == False: 
-        logger.info("downloading relevant DEMs")  
-        dems = download_dem(
-            geo_df=huc_boundary, 
-            dataset=config.dem_products[res], 
-            out_dir=config.root/"raw_dem", 
-            huc8=huc8,
-            overwrite=overwrite
-        )  
- 
-        if len(dems) > 0:
-            logger.info("reprojecting and merging DEMs")
-            process_dems(
-                raster_paths=dems, 
-                out_vrt=config.root/config.dem.out_file.vrt, 
-                sr=config.sr, 
-                overwrite=overwrite
-            )  
-            
-            logger.info("checking DEM coverage for {}".format(str(config.root/config.dem.out_file.vrt)))
-            dem_coverage = check_dem_coverage(
-                str(config.root/config.dem.out_file.vrt), 
-                str(config.root/config.huc_bounds.out_file.geojson))
-            
-            if not dem_coverage:
-                logger.info("DEMs at res {} don't cover full watershed. trying lower resolution.".format(str(res)))
-                res, config = update_res(config.res, next_res(res, config), config)
-        else:
-            logger.info("No DEMS for resolution {}. trying lower resolution.".format(str(res)))
-            res, config = update_res(config.res, next_res(res, config), config)
-            logger.info("config update: " + str(config.root/config.dem.out_file.vrt))
-        
-     
-    logger.info("all inputs processed")
-    return config
-
-    
-if __name__ == '__main__':
-    
-    parser = argparse.ArgumentParser()
-    loc = parser.add_mutually_exclusive_group(required=True)
-    loc.add_argument('--point', '-pt', help="a point in lat/long coordinates", nargs=2, type=float)
-    loc.add_argument('--huc', '-huc', help="a huc code", type=str)
-    parser.add_argument(
-        '--overwrite', 
-        help="should the files redownloaded/calculated and  overwritten if they exist", 
-        dest='overwrite', action='store_true'
-    )
-    
-    args = parser.parse_args()
-    
-    if args.point:
-        huc = utils.get_huc12(tuple(args.point))
-    else:
-        huc = args.huc
-        
-    config = create_config(huc)
-    
-    main(
-        huc = huc, 
-        config=config,
-        overwrite= args.overwrite
-    )
-    
     
