@@ -21,14 +21,12 @@ if data_scale.find('HUC') >= 0:
     else:
         select_data = aoi[:int(huc_level)]
 to_headwaters = False #False if only interested in local huc area
+outlet_aois = False #False if you do not have predefined outlet locations of interest
 
 #dem info
 dem_base_name = 'state_dem' #for saving in grass
 aligned = False
 carved = True
-
-# provide shapefile with polygons or point to wbd file
-basins = pl.Path(os.getcwd()).parent/'data'/'Vectors'/Project_Area/'WBDHU10.shp' 
 
 #if you'd like to clean up after yourself, set this to True
 auto_delete = False
@@ -43,3 +41,8 @@ if not os.path.exists(raster_dir):
     os.makedirs(raster_dir)
     
 
+# provide shapefile with polygons or point to wbd file
+basins = vector_dir/'WBDHU10.shp' 
+
+#provide shapefile with outlet points if outlet_aois is True
+outlet_shp = vector_dir/f'outlets_{aoi}.shp'

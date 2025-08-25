@@ -12,8 +12,8 @@ services:
       resources:
     #Number of cpus and memory accessed limits
         limits:
-          cpus: '4'
-          memory: 16G
+          cpus: '16'
+          memory: 64G
     #volumes Syntax: named_volume_name:/container/path
     volumes:
      - ../grassdata:/home/grassdata

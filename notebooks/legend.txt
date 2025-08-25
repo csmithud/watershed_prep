@@ -531,3 +531,13 @@ aoi|legend/area|5|lf|red|None|0|area|10221
 aoi|legend/area|5|lf|red|None|0|area|10221
 aoi|legend/area|5|lf|red|None|0|area|10221
 aoi|legend/area|5|lf|red|None|0|area|10221
+aoi|legend/area|5|lf|red|None|0|area|1
+aoi|legend/area|5|lf|red|None|0|area|1
+aoi|legend/area|5|lf|red|None|0|area|1
+aoi|legend/area|5|lf|red|None|0|area|1
+outlets_10120105|basic/x|5|lf|black|None|0|point|148
+aoi|legend/area|5|lf|red|None|0|area|1
+outlets_10120105|basic/x|5|lf|black|None|0|point|1
+aoi|legend/area|5|lf|red|None|0|area|1
+aoi|legend/area|5|lf|red|None|0|area|1
+outlets_10120105|basic/x|5|lf|black|None|0|point|1
