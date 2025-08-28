@@ -912,17 +912,21 @@ def dem_tiles_to_gis(gs,dem_dir,Project_Area,vert_unit, patch=False,delete_raw=F
             return tile_rasters
 
 
-def list_existing_grass():
+def list_existing_grass(print_it=True):
     #List Existing Files: Vectors and Rasters
     layers = {'vector':[],'raster':[]}
-    print('Available vector maps:')
+    if print_it:
+        print('Available vector maps:')
     for vect in gs.list_strings(type='vector'):
-        print (vect)
+        if print_it:
+            print (vect)
         layers['vector'].append(vect)
 
-    print('\nAvailable raster maps:')
+    if print_it:
+        print('\nAvailable raster maps:')
     for rast in gs.list_strings(type='raster'):
-        print (rast)
+        if print_it:
+            print (rast)
         layers['raster'].append(rast)
     return layers
 
