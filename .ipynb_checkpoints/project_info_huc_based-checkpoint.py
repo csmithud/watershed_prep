@@ -9,6 +9,7 @@ buffer = 2000 #buffer around the project area in native units
 #buffer = 0 #set to 0 if you do not want to buffer the project area
 Location = Project_Area+'_'+sr #initiate variable here
 Mapset = 'PERMANENT' #always set to this
+dem_preprocessed = True
 
 ## Set variables analysis
 data_scale = 'HUC8' #other options HUC12, HUC10, HUC8 OR the field name of the source data to be split <-- case sensitive
@@ -42,7 +43,7 @@ if not os.path.exists(raster_dir):
     
 
 # provide shapefile with polygons or point to wbd file
-basins = vector_dir/'WBD_HU10s.shp' 
+basins = vector_dir/'WBD_HU10s_p1.shp' 
 
 #provide shapefile with outlet points if outlet_aois is True
 outlet_shp = vector_dir/f'outlets_{aoi}.shp'
