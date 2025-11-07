@@ -4,3 +4,26 @@ data/Rasters/
 data/Vectors/
 docker/stantec-ca.crt
 docker/wincacerts.pem
+
+# Jupyter Notebook Checkpoints
+.ipynb_checkpoints/
+
+# macOS system files
+.DS_Store
+
+# Virtual environments
+.env
+venv/
+env/
+
+# Python compiled files
+*.pyc
+__pycache__/
+
+# Log files
+*.log
+
+# Example of ignoring all output cells in notebooks (requires nbstripout or similar hook)
+# If using nbstripout, consider also ignoring the .git/hooks directory if you want to prevent committing the hook itself
+# *.ipynb
+# !main_notebook.ipynb # Example: explicitly track a specific notebook if you ignored all others
