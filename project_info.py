@@ -127,33 +127,36 @@ class GrassWatershed:
         '''
         if self.hunits == 'ft':
             self.threshold = GrassWatershed.threshold*27878400/self.cell_area
-            self.search_radius = 100*3.28084/np.sqrt(self.cell_area) #assume search radius of 50m
+            self.search_radius = 500*3.28084/np.sqrt(self.cell_area) #assume search radius of 500m
         else:
             self.threshold = GrassWatershed.threshold*2590136.755/self.cell_area
-            self.search_radius = 100/np.sqrt(self.cell_area) #assume search radius of 50m
+            self.search_radius = 500/np.sqrt(self.cell_area) #assume search radius of 500m
         
     def reset_proj_region(self):
         '''
         '''
+        self.list_existing_grass(print_it=False)
         #remove mask if it exists and reset region
         if 'MASK@PERMANENT' in self.grass_maps['raster']:
             gs.run_command('r.mask',flags = 'r')
         gs.run_command('g.region',raster = self.dem,align=self.dem,zoom=self.dem)
     
-    def get_rough_watershed_data(self):
+    def get_rough_watershed_data(self,resample=10,overwrite=False):
         '''
         '''
-        resample = 10 #x
         if 'MASK@PERMANENT' in self.grass_maps['raster']:
             gs.run_command('r.mask',flags = 'r')
+        gs.run_command('g.region',raster = self.dem,align=self.dem,zoom=self.dem)
         gs.run_command('g.region',res = resample*np.sqrt(self.cell_area))
         self.get_threshold()
         self.threshold_rough = self.threshold/resample
         self.search_radius_rough = self.search_radius/10
-        if f'r_streams_{GrassWatershed.Project_Area}_rough' in self.grass_maps['raster']:
+        if f'r_streams_{GrassWatershed.Project_Area}_rough'+"@PERMANENT" in self.grass_maps['raster'] and not overwrite:
+            print('using existing project-wide watershed data for the project area')
             self.rough_created = True
         else:
             self.rough_created = False
+            print('creating  project-wide watershed data for the project area')
         assert self.geometry in ('point','polygon'), 'Geometry type must be a point or polygon'
         if self.geometry == 'point' and not self.rough_created:
             #run at x times resolution to get initial boundary area
@@ -166,13 +169,16 @@ class GrassWatershed:
                            direction= f'drain_dir_{GrassWatershed.Project_Area}_rough',
                            stream_raster = f'r_streams_{GrassWatershed.Project_Area}_rough',stream_vector = f'v_streams_{GrassWatershed.Project_Area}_rough',
                            memory = GrassWatershed.max_mem)
+        
            
-    def get_basin_area(self):
+    def get_basin_area(self,overwrite=False):
         '''
         '''
         assert self.geometry in ('point','polygon'), 'Geometry type must be a point or polygon'
         if self.geometry == 'point':
+            gs.run_command('g.region',raster=f'r_streams_{GrassWatershed.Project_Area}_rough')
             gs.run_command('v.import', input= self.outlet,  output= f'aoi_{self.select_data}_outlet_raw')
+            
             gs.run_command('r.stream.snap',input=f'aoi_{self.select_data}_outlet_raw', output=f'{self.v_outlet}_rough', 
                            stream_rast=f'r_streams_{GrassWatershed.Project_Area}_rough',accumulation=f'accum_{GrassWatershed.Project_Area}_rough', 
                            threshold = self.threshold_rough, radius = self.search_radius_rough,memory = GrassWatershed.max_mem)
@@ -180,14 +186,14 @@ class GrassWatershed:
             gs.run_command('r.stream.basins',direction = f'drain_dir_{GrassWatershed.Project_Area}_rough', points = f'{self.v_outlet}_rough',
                            basins =f'{self.r_basins}_rough', memory = GrassWatershed.max_mem)
             gs.run_command('r.to.vect', input=f'{self.r_basins}_rough', output=f'aoi_{self.select_data}_aoi_raw', type='area',flags='s')
-            gs.run_command('v.out.ogr', input= f'aoi_{self.select_data}_aoi_raw' ,type = 'area',output = self.basins.replace('.geojson','_rough.geojson'), 
+            gs.run_command('v.out.ogr', input= f'aoi_{self.select_data}_aoi_raw' ,type = 'area',output = str(self.basins).replace('.geojson','_rough.geojson'), 
                            format = 'GeoJSON')
             gs.run_command('v.out.ogr', input=  f'aoi_{self.select_data}_outlet_raw' ,type = 'point',output = 'aoi.geojson', format = 'GeoJSON')
         else:
             #refined delineation
             #import area of interest
             temp = gpd.read_file(self.basins)
-            aoi_path = self.basins.replace('.geojson','_rough.geojson')
+            aoi_path = str(self.basins).replace('.geojson','_rough.geojson')
             temp.loc[temp[self.analysis_scale] == self.aoi].to_file(aoi_path, driver="GeoJSON")
             gs.run_command('v.import', input= aoi_path,  output= f'aoi_{self.select_data}_aoi_raw')
 
@@ -204,16 +210,17 @@ class GrassWatershed:
 
         #get outlet point by identifying the highest accumulation value along the perimeter.
         gs.run_command('r.watershed', elevation=self.dem, drainage = self.drain_dir, accumulation = self.accum, flags= 'sabm',memory = GrassWatershed.max_mem) ##note that this is in feet
-        gs.run_command('v.rast.stats', raster=self.accum, map=f'aoi_{self.select_data}',method='max',column='accum')
-        max_accum = list(gs.parse_command('v.db.select', columns='accum_maximum',map = f'aoi_{self.select_data}',flags='c').keys())
+        gs.run_command('v.rast.stats', raster=self.accum, map=f'aoi_{self.select_data}_aoi_raw',method='max',column='accum')
+        max_accum = list(gs.parse_command('v.db.select', columns='accum_maximum',map = f'aoi_{self.select_data}_aoi_raw',flags='c').keys())
         for outlet_accum in max_accum:
-            gs.run_command('r.mapcalc',expression = f'{self.r_outlet} = if({accum} == {outlet_accum},{self.select_data},null())')
+            gs.run_command('r.mapcalc',expression = f'{self.r_outlet} = if({self.accum} == {outlet_accum},{self.select_data},null())')
             gs.run_command('r.to.vect', input=self.r_outlet, output=self.v_outlet, type='point')
             gs.run_command('v.out.ogr', input=  f'aoi_{self.select_data}_aoi_raw' ,type = 'point',output = self.outlet, format = 'GeoJSON')
             
         print("Delineating the watersheds")
         gs.run_command('r.stream.basins',direction = self.drain_dir, points = self.v_outlet,basins =self.r_basins, memory = GrassWatershed.max_mem)
-
+        gs.run_command('r.stream.extract', elevation=self.dem, accumulation = self.accum, threshold =self.threshold, direction= self.drain_dir,
+               stream_raster = self.r_streams,stream_vector = self.v_streams, memory = GrassWatershed.max_mem)
         print("Converting the delineated watershed rasters to vectors")
         gs.run_command('r.to.vect', input=self.r_basins, output= self.v_basins, type="area", flags='s')
         gs.run_command('v.out.ogr', input=  self.v_basins ,type = 'area',output = self.basins, format = 'GeoJSON')

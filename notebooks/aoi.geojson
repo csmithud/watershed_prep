@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "aoi_06456200_outlet_raw",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::26852" } },
+"features": [
+{ "type": "Feature", "properties": { "cat": 1, "station_nm": "PEBBLE CREEK NEAR ESTHER, NEBR.", "HUC8": "10150003", "GID": "06456200" }, "geometry": { "type": "Point", "coordinates": [ 815369.095954298973083, 1020618.027248561382294 ] } }
+]
+}
