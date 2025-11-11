@@ -20,7 +20,7 @@ import csv
 from IPython.display import clear_output
 from zipfile import ZipFile
 from shapely import geometry
-from shapely.geometry import shape, Polygon
+from shapely.geometry import shape, Polygon, Point
 from collections import defaultdict
 import matplotlib.colors as colors
 import numpy.ma as ma
