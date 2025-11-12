@@ -29,15 +29,6 @@ class ProjectInformation:
             os.makedirs(self.vector_dir)
         if not os.path.exists(self.raster_dir):
             os.makedirs(self.raster_dir)
-            
-    def reset_proj_region(self):
-        '''
-        '''
-        self.list_existing_grass(print_it=False)
-        #remove mask if it exists and reset region
-        if 'MASK@PERMANENT' in self.grass_maps['raster']:
-            gs.run_command('r.mask',flags = 'r')
-        gs.run_command('g.region',raster = self.dem,align=self.dem,zoom=self.dem)
 
 
 class GrassWatershed:
@@ -98,6 +89,15 @@ class GrassWatershed:
         self.r_outlet = f'r_outlet_{self.select_data}'
         self.r_streams_order = f'r_streams_order{self.select_data}'
     
+    def reset_proj_region(self):
+        '''
+        '''
+        self.list_existing_grass(print_it=False)
+        #remove mask if it exists and reset region
+        if 'MASK@PERMANENT' in self.grass_maps['raster']:
+            gs.run_command('r.mask',flags = 'r')
+        gs.run_command('g.region',raster = self.dem,align=self.dem,zoom=self.dem)
+    
     def list_existing_grass(self,print_it=True):
         #List Existing Files: Vectors and Rasters
         layers = {'vector':[],'raster':[]}
@@ -144,6 +144,7 @@ class GrassWatershed:
     def get_rough_watershed_data(self,resample=10,overwrite=False):
         '''
         '''
+        self.list_existing_grass(print_it=False)
         if 'MASK@PERMANENT' in self.grass_maps['raster']:
             gs.run_command('r.mask',flags = 'r')
         gs.run_command('g.region',raster = self.dem,align=self.dem,zoom=self.dem)
@@ -197,7 +198,7 @@ class GrassWatershed:
             temp.loc[temp[self.analysis_scale] == self.aoi].to_file(aoi_path, driver="GeoJSON")
             gs.run_command('v.import', input= aoi_path,  output= f'aoi_{self.select_data}_aoi_raw')
 
-        self.project.reset_proj_region()
+        self.reset_proj_region()
 
         print('added basin aoi to grass')
         #buffer to create potentital watershed area
@@ -239,13 +240,15 @@ class RegressionData:
         gs.run_command('v.db.update',map=grass_layer,layer=1,column=col,value=int(val))
     
     def set_aoi(self):
-        self.project.reset_proj_region()
+        self.reset_proj_region()
         gs.run_command('r.mask',raster = self.grass_data.r_basins,overwrite=True)
         gs.run_command('g.region',raster = self.grass_data.dem,align=self.grass_data.dem,zoom=self.grass_data.dem)
     
     def get_raster_avg(self,tif,col):
-        gs.run_command('r.in.gdal',)
-        
+        gs.run_command('r.in.gdal',input=tif,output=col,overwrite=True)
+        gs.run_command('v.rast.stats', raster=col, map=self.grass_data.v_basins,method='average',column=col)
+        avg = list(gs.parse_command('v.db.select', columns=col,map = self.grass_data.v_basins,flags='c').keys())
+        return avg
         
     def get_drainage_area(self):
         # raster_basin = gs.parse_command('r.info',map=self.grass_data.r_basins,flags='gs')
@@ -258,10 +261,27 @@ class RegressionData:
                                                     units='miles'))[1].split('|')))
         self.drainage_area = area
     
+    def get_basin_len(self):
+        #do shapely stuff
+        basin = gpd.read_file(self.basins)
+        outlet = gpd.read_file(self.outlet)
+        max_dist = 0
+        for point in basin.geometry[0].exterior.coords:
+            pnt_dist = shapely.distance(Point(point), outlet.geometry[0])
+            if pnt_dist > max_dist:
+                print(pnt_dist)
+                max_dist = pnt_dist
+                top_coord = point
+        if self.grass_data.hunits == 'ft':
+            basin_length = max_dist*0.000189394 #convert feet to miles
+        else:
+            basin_length = max_dist*0.000621371 #convert meters to miles
+        return basin_length
+    
     def get_basin_shape(self):
         perimeter_mi = (float(list(gs.parse_command('v.to.db',map=self.grass_data.v_basins,option='perimeter',flags='p',
                                                     units='miles'))[1].split('|')))
-        basin_length = 'xx' #miles line drawn between maximum distance along basin perimeter from outlet to minimum distance along basin perimeter to outlet
+        basin_length = self.get_basin_len() #miles line drawn between maximum distance along basin perimeter from outlet to minimum distance along basin perimeter to outlet
         basin_width = self.drainage_area/basin_length #miles #Drainage Area / Basin Length
         self.sf = self.drainage_area/basin_width 
         self.ii = (0.5*perimeter_mi*basin_length)/(self.drainage_area + np.square(basin_length))
