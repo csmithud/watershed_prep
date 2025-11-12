@@ -227,112 +227,115 @@ class GrassWatershed:
         gs.run_command('v.out.ogr', input=  self.v_basins ,type = 'area',output = self.basins, format = 'GeoJSON')
         
 
-# class RegressionData:
+class RegressionData:
         
-#     def __init__(self,project, grass_data):
-#         ## Set variables analysis
-#         self.project = project
-#         self.grass_data = grass_data #point of watershed outlet or polygon watershed boundary
-#         #BL	PRISMyr_mm	CN_mean
+    def __init__(self,project, grass_data):
+        ## Set variables analysis
+        self.project = project
+        self.grass_data = grass_data #point of watershed outlet or polygon watershed boundary
+        #BL	PRISMyr_mm	CN_mean
     
-#     def add_col_val(self,grass_layer,col,col_type,val):
-#         gs.run_command('v.db.addcolumn',map=grass_layer,columns=f'{col} {col_type}')
-#         gs.run_command('v.db.update',map=grass_layer,layer=1,column=col,value=int(val))
+    def add_col_val(self,grass_layer,col,col_type,val):
+        exist_cols = []
+        for column in list(gs.parse_command('v.db.connect',map=grass_layer,flags='c')):
+            exist_cols.append(column.split('|')[1])
+        if col not in exist_cols:
+            gs.run_command('v.db.addcolumn',map=grass_layer,columns=f'{col} {col_type}')
+        gs.run_command('v.db.update',map=grass_layer,layer=1,column=col,value=int(val))
     
-#     def set_aoi(self):
-#         self.reset_proj_region()
-#         gs.run_command('r.mask',raster = self.grass_data.r_basins,overwrite=True)
-#         gs.run_command('g.region',raster = self.grass_data.dem,align=self.grass_data.dem,zoom=self.grass_data.dem)
+    def set_aoi(self):
+        self.grass_data.reset_proj_region()
+        gs.run_command('r.mask',raster = self.grass_data.r_basins,overwrite=True)
+        gs.run_command('g.region',raster = self.grass_data.dem,align=self.grass_data.dem,zoom=self.grass_data.dem)
     
-#     def get_raster_avg(self,tif,col):
-#         gs.run_command('r.in.gdal',input=tif,output=col,overwrite=True)
-#         gs.run_command('v.rast.stats', raster=col, map=self.grass_data.v_basins,method='average',column=col)
-#         avg = list(gs.parse_command('v.db.select', columns=col,map = self.grass_data.v_basins,flags='c').keys())
-#         return avg
+    def get_raster_avg(self,tif,col):
+        gs.run_command('r.import',input=tif,output=col,resample='bilinear',overwrite=True)
+        gs.run_command('v.rast.stats', raster=col, map=self.grass_data.v_basins,method='average',column=col,flags='c')
+        avg = list(gs.parse_command('v.db.select', columns=f'{col}_average',map = self.grass_data.v_basins,flags='c').keys())
+        return avg[0]
         
-#     def get_drainage_area(self):
-#         # raster_basin = gs.parse_command('r.info',map=self.grass_data.r_basins,flags='gs')
-#         # assert self.grass_data.hunits in ['ft','m'], "no units horizontal units set"
-#         # if self.grass_data.hunits = 'ft':
-#         #     area = (float(raster_basin['n'])*float(raster_basin['nsres'])*float(raster_basin['ewres']))/(2590136.75519263*3.28084)
-#         # else:
-#         #     area = (float(raster_basin['n'])*float(raster_basin['nsres'])*float(raster_basin['ewres']))/2590136.75519263 #sq m to sq mi
-#         area_sqmi = (float(list(gs.parse_command('v.to.db',map=self.grass_data.v_basins,option='area',flags='p',
-#                                                     units='miles'))[1].split('|')))
-#         self.drainage_area = area
+    def get_drainage_area(self):
+        # raster_basin = gs.parse_command('r.info',map=self.grass_data.r_basins,flags='gs')
+        # assert self.grass_data.hunits in ['ft','m'], "no units horizontal units set"
+        # if self.grass_data.hunits = 'ft':
+        #     area = (float(raster_basin['n'])*float(raster_basin['nsres'])*float(raster_basin['ewres']))/(2590136.75519263*np.square(3.28084))
+        # else:
+        #     area = (float(raster_basin['n'])*float(raster_basin['nsres'])*float(raster_basin['ewres']))/2590136.75519263 #sq m to sq mi
+        area_sqmi = float(list(gs.parse_command('v.to.db',map=aoi.v_basins,option='area',flags='p',
+                                                    units='miles'))[1].split('|')[1])
+        self.drainage_area = area_sqmi
     
-#     def get_basin_len(self):
-#         #do shapely stuff
-#         basin = gpd.read_file(self.basins)
-#         outlet = gpd.read_file(self.outlet)
-#         max_dist = 0
-#         for point in basin.geometry[0].exterior.coords:
-#             pnt_dist = shapely.distance(Point(point), outlet.geometry[0])
-#             if pnt_dist > max_dist:
-#                 print(pnt_dist)
-#                 max_dist = pnt_dist
-#                 top_coord = point
-#         if self.grass_data.hunits == 'ft':
-#             basin_length = max_dist*0.000189394 #convert feet to miles
-#         else:
-#             basin_length = max_dist*0.000621371 #convert meters to miles
-#         return basin_length
+    def get_basin_len(self):
+        #do shapely stuff
+        basin = gpd.read_file(self.grass_data.basins)
+        outlet = gpd.read_file(self.grass_data.outlet)
+        max_dist = 0
+        for point in basin.geometry[0].exterior.coords:
+            pnt_dist = shapely.distance(Point(point), outlet.geometry[0])
+            if pnt_dist > max_dist:
+                max_dist = pnt_dist
+                top_coord = point
+        if self.grass_data.hunits == 'ft':
+            basin_length = max_dist*0.000189394 #convert feet to miles
+        else:
+            basin_length = max_dist*0.000621371 #convert meters to miles
+        return basin_length
     
-#     def get_basin_shape(self):
-#         perimeter_mi = (float(list(gs.parse_command('v.to.db',map=self.grass_data.v_basins,option='perimeter',flags='p',
-#                                                     units='miles'))[1].split('|')))
-#         basin_length = self.get_basin_len() #miles line drawn between maximum distance along basin perimeter from outlet to minimum distance along basin perimeter to outlet
-#         basin_width = self.drainage_area/basin_length #miles #Drainage Area / Basin Length
-#         self.sf = self.drainage_area/basin_width 
-#         self.ii = (0.5*perimeter_mi*basin_length)/(self.drainage_area + np.square(basin_length))
-#         self.add_col_val(self.grass_data.v_basins,'II', ' double precision',float(self.ii))
-#         self.add_col_val(self.grass_data.v_basins,'SF', ' double precision',float(self.sf))
+    def get_basin_shape(self):
+        perimeter_mi = float(list(gs.parse_command('v.to.db',map=aoi.v_basins,option='perimeter',flags='p',
+                                                    units='miles'))[1].split('|')[1])
+        basin_length = self.get_basin_len() #miles line drawn between maximum distance along basin perimeter from outlet to minimum distance along basin perimeter to outlet
+        basin_width = self.drainage_area/basin_length #miles #Drainage Area / Basin Length
+        self.sf = self.drainage_area/basin_width 
+        self.ii = (0.5*perimeter_mi*basin_length)/(self.drainage_area + np.square(basin_length))
+        self.add_col_val(self.grass_data.v_basins,'II', ' double precision',float(self.ii))
+        self.add_col_val(self.grass_data.v_basins,'SF', ' double precision',float(self.sf))
                               
 
-#     def get_basin_relief(self):
-#         gs.run_command('v.rast.stats', raster=self.grass_data.dem, map=self.grass_data.v_basins,method='max',column='elev')
-#         max_elevation = list(gs.parse_command('v.db.select', columns='elev_maximum',map = self.grass_data.v_basins,flags='c').keys())
+    def get_basin_relief(self):
+        gs.run_command('v.rast.stats', raster=self.grass_data.dem, map=self.grass_data.v_basins,method='max',column='elev')
+        max_elevation = list(gs.parse_command('v.db.select', columns='elev_maximum',map = self.grass_data.v_basins,flags='c').keys())
         
-#         gs.run_command('v.rast.stats', raster=self.grass_data.dem, map=self.grass_data.v_outlet,method='min',column='elev')
-#         outlet_elevation = list(gs.parse_command('v.db.select', columns='elev_minimum',map = self.grass_data.v_outlet,flags='c').keys())
-#         assert float(max_elevation) > float(outlet_elevation), 'something is wrong'
-#         self.br = float(max_elevation) - float(outlet_elevation)
-#         self.add_col_val(self.grass_data.v_basins,'BR_Ft', 'double precision',float(self.br))
+        gs.run_command('v.rast.stats', raster=self.grass_data.dem, map=self.grass_data.v_outlet,method='min',column='elev')
+        outlet_elevation = list(gs.parse_command('v.db.select', columns='elev_minimum',map = self.grass_data.v_outlet,flags='c').keys())
+        assert float(max_elevation) > float(outlet_elevation), 'something is wrong'
+        self.br = float(max_elevation) - float(outlet_elevation)
+        self.add_col_val(self.grass_data.v_basins,'BR_Ft', 'double precision',float(self.br))
     
-#     def get_stream_order(self):
-#         gs.run_command('g.region',raster = self.grass_data.r_streams,align=self.grass_data.r_streams)
-#         gs.run_command('r.stream.order',stream_rast = self.grass_data.r_streams,direction = self.grass_data.drain_dir,
-#                        strahler = self.grass_data.r_streams_order, memory=self.project.max_mem)
-#         stats = gs.parse_command('r.stream.stats',stream_rast = self.grass_data.r_streams_order,direction = self.grass_data.drain_dir,elevation=self.grass_data.dem,
-#                                  flags='o',memory=self.project.max_mem)
-#         num_fos = list(stats)[2].split(',')[1]
-#         self.fos = num_fos
-#         self.add_col_val(self.grass_data.v_basins,'FOS', 'integer',int(num_fos))
+    def get_stream_order(self):
+        gs.run_command('g.region',raster = self.grass_data.r_streams,align=self.grass_data.r_streams)
+        gs.run_command('r.stream.order',stream_rast = self.grass_data.r_streams,direction = self.grass_data.drain_dir,
+                       strahler = self.grass_data.r_streams_order, memory=self.project.max_mem)
+        stats = gs.parse_command('r.stream.stats',stream_rast = self.grass_data.r_streams_order,direction = self.grass_data.drain_dir,elevation=self.grass_data.dem,
+                                 flags='o',memory=self.project.max_mem)
+        num_fos = list(stats)[2].split(',')[1]
+        self.fos = num_fos
+        self.add_col_val(self.grass_data.v_basins,'FOS', 'integer',int(num_fos))
         
-#     def get_main_ch_slope(self):
-#         #MCS_FtpMia
-#         self.grass_data.lfpds = self.grass_data.r_streams +'lfpds'
-#         self.grass_data.vlfpds = self.grass_data.r_streams +'v_lfpds'
-#         gs.run_command('r.stream.distance',stream_rast = self.grass_data.r_streams, 
-#                        direction=self.grass_data.drain_dir,method = 'downstream',
-#                        distance= self.grass_data.lfpds,flags='o',memory=90000)
-#         max_dist = gs.parse_command('r.info',map=self.grass_data.lfpds,flags='s')['max']
-#         gs.run_command('r.mapcalc',expression = f'{self.grass_data.lfpds}_start = if({self.grass_data.lfpds} >= {float(max_dist)-.01},{self.grass_data.aoi},null())')
-#         gs.run_command('r.to.vect', input=f'{self.grass_data.lfpds}_start', output=f'{self.grass_data.vlfpds}_start', type='point')
-#         gs.run_command('v.extract',input=f'{self.grass_data.vlfpds}_start',cats='1',output=f'{self.grass_data.vlfpds}_start_op')
-#         gs.run_command('r.path',input=f'{drain_dir}_{aoi}',format='45degree',start_points=f'{self.grass_data.vlfpds}_start_op',
-#                        vector_path=self.grass_data.vlfpds)
-#         gs.run_command('v.segment',input=self.grass_data.vlfpds,rules= self.project.data_dir/'rules.txt',output=f'mcl_p_{self.grass_data.aoi}')
-#         gs.run_command('v.db.addtable',map=f'mcl_p_{self.grass_data.aoi}')
-#         gs.run_command('v.rast.stats', raster=self.grass_data.dem, map=f'mcl_p_{self.grass_data.aoi}',method='max',column='elev')
-#         elevations = list(gs.parse_command('v.db.select', columns='elev_maximum',map = f'mcl_p_{aoi}',flags='c').keys())
-#         elevation_diff = float(elevations[0]) - float(elevations[1])
-#         assert elevation_diff >= 0,'something is wrong'
-#         #length in miles
-#         len_mi = (float(list(gs.parse_command('v.to.db',map=f'mcl_{aoi}',option='length',flags='p'))[1].split('|')[1])*0.75)/5280
-#         ft_mi = elevation_diff / len_mi
-#         self.mcl_sl = ft_mi
-#         self.add_col_val(self.grass_data.v_basins,'MCL_Ft_pMi', ' double precision',float(ft_mi))
+    def get_main_ch_slope(self):
+        #MCS_FtpMia
+        self.grass_data.lfpds = self.grass_data.r_streams +'lfpds'
+        self.grass_data.vlfpds = self.grass_data.r_streams +'v_lfpds'
+        gs.run_command('r.stream.distance',stream_rast = self.grass_data.r_streams, 
+                       direction=self.grass_data.drain_dir,method = 'downstream',
+                       distance= self.grass_data.lfpds,flags='o',memory=90000)
+        max_dist = gs.parse_command('r.info',map=self.grass_data.lfpds,flags='s')['max']
+        gs.run_command('r.mapcalc',expression = f'{self.grass_data.lfpds}_start = if({self.grass_data.lfpds} >= {float(max_dist)-.01},{self.grass_data.aoi},null())')
+        gs.run_command('r.to.vect', input=f'{self.grass_data.lfpds}_start', output=f'{self.grass_data.vlfpds}_start', type='point')
+        gs.run_command('v.extract',input=f'{self.grass_data.vlfpds}_start',cats='1',output=f'{self.grass_data.vlfpds}_start_op')
+        gs.run_command('r.path',input=self.grass_data.drain_dir,format='45degree',start_points=f'{self.grass_data.vlfpds}_start_op',
+                       vector_path=self.grass_data.vlfpds)
+        gs.run_command('v.segment',input=self.grass_data.vlfpds,rules= self.project.data_dir/'rules.txt',output=f'mcl_p_{self.grass_data.aoi}')
+        gs.run_command('v.db.addtable',map=f'mcl_p_{self.grass_data.aoi}')
+        gs.run_command('v.rast.stats', raster=self.grass_data.dem, map=f'mcl_p_{self.grass_data.aoi}',method='max',column='elev')
+        elevations = list(gs.parse_command('v.db.select', columns='elev_maximum',map = f'mcl_p_{self.grass_data.aoi}',flags='c').keys())
+        elevation_diff = float(elevations[0]) - float(elevations[1])
+        assert elevation_diff >= 0,'something is wrong'
+        #length in miles
+        len_mi = (float(list(gs.parse_command('v.to.db',map=self.grass_data.vlfpds,option='length',units='miles',flags='p'))[1].split('|')[1])*0.75)
+        ft_mi = elevation_diff / len_mi
+        self.mcl_sl = ft_mi
+        self.add_col_val(self.grass_data.v_basins,'MCL_Ft_pMi', ' double precision',float(ft_mi))
         
 
         

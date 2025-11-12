@@ -2004,3 +2004,17 @@ v_basins_06456200|legend/area|5|lf|red|None|0|area|1
 v_streams_06456200|basic/x|5|lf|black|None|0|point|4
 v_streams_06456200|legend/line|5|lf|black|None|0|line|3
 v_outlet_06456200|basic/x|5|lf|green|None|0|point|1
+v_basins_06456200|legend/area|5|lf|red|None|0|area|1
+v_streams_06456200|basic/x|5|lf|black|None|0|point|4
+v_streams_06456200|legend/line|5|lf|black|None|0|line|3
+v_outlet_06456200|basic/x|5|lf|green|None|0|point|1
+r_streams_06456200v_lfpds_start_op|basic/x|5|lf|red|None|0|point|1
+r_streams_06456200v_lfpds|legend/line|5|lf|black|None|0|line|1
+v_outlet_06456200|basic/x|5|lf|green|None|0|point|1
+r_streams_06456200v_lfpds_start_op|basic/x|5|lf|red|None|0|point|1
+r_streams_06456200v_lfpds|legend/line|5|lf|black|None|0|line|1
+v_outlet_06456200|basic/x|5|lf|green|None|0|point|1
+r_streams_06456200v_lfpds_start_op|basic/x|5|lf|red|None|0|point|1
+r_streams_06456200v_lfpds|legend/line|5|lf|black|None|0|line|1
+v_outlet_06456200|basic/x|5|lf|green|None|0|point|1
+mcl_p_06456200|basic/x|5|lf|yellow|None|0|point|2
