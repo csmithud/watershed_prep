@@ -233,7 +233,6 @@ class RegressionData:
         ## Set variables analysis
         self.project = project
         self.grass_data = grass_data #point of watershed outlet or polygon watershed boundary
-        #BL	PRISMyr_mm	CN_mean
     
     def add_col_val(self,grass_layer,col,col_type,val):
         exist_cols = []
@@ -261,35 +260,39 @@ class RegressionData:
         #     area = (float(raster_basin['n'])*float(raster_basin['nsres'])*float(raster_basin['ewres']))/(2590136.75519263*np.square(3.28084))
         # else:
         #     area = (float(raster_basin['n'])*float(raster_basin['nsres'])*float(raster_basin['ewres']))/2590136.75519263 #sq m to sq mi
-        area_sqmi = float(list(gs.parse_command('v.to.db',map=aoi.v_basins,option='area',flags='p',
+        area_sqmi = float(list(gs.parse_command('v.to.db',map=self.grass_data.v_basins,option='area',flags='p',
                                                     units='miles'))[1].split('|')[1])
         self.drainage_area = area_sqmi
+        self.add_col_val(self.grass_data.v_basins,'TDA_SqMi', 'double precision',float(self.drainage_area))
     
     def get_basin_len(self):
         #do shapely stuff
         basin = gpd.read_file(self.grass_data.basins)
         outlet = gpd.read_file(self.grass_data.outlet)
+        assert basin.crs == outlet.crs, "Tell curtis he needs to add repojection to this code"
+        units_geojson = basin.crs.to_proj4()[basin.crs.to_proj4().find('units')+6:basin.crs.to_proj4().find('+no_defs')-1]
         max_dist = 0
         for point in basin.geometry[0].exterior.coords:
             pnt_dist = shapely.distance(Point(point), outlet.geometry[0])
             if pnt_dist > max_dist:
                 max_dist = pnt_dist
                 top_coord = point
-        if self.grass_data.hunits == 'ft':
-            basin_length = max_dist*0.000189394 #convert feet to miles
-        else:
-            basin_length = max_dist*0.000621371 #convert meters to miles
+        if units_geojson == 'us-ft' or units_geojson == 'ft' :
+            basin_length = max_dist/5280 #convert feet to miles
+        else: #assume meters
+            basin_length = max_dist/1609.34 #convert meters to miles
         return basin_length
     
     def get_basin_shape(self):
-        perimeter_mi = float(list(gs.parse_command('v.to.db',map=aoi.v_basins,option='perimeter',flags='p',
+        perimeter_mi = float(list(gs.parse_command('v.to.db',map=self.grass_data.v_basins,option='perimeter',flags='p',
                                                     units='miles'))[1].split('|')[1])
         basin_length = self.get_basin_len() #miles line drawn between maximum distance along basin perimeter from outlet to minimum distance along basin perimeter to outlet
         basin_width = self.drainage_area/basin_length #miles #Drainage Area / Basin Length
-        self.sf = self.drainage_area/basin_width 
-        self.ii = (0.5*perimeter_mi*basin_length)/(self.drainage_area + np.square(basin_length))
-        self.add_col_val(self.grass_data.v_basins,'II', ' double precision',float(self.ii))
-        self.add_col_val(self.grass_data.v_basins,'SF', ' double precision',float(self.sf))
+        self.sf = float(self.drainage_area/basin_width)
+        self.add_col_val(self.grass_data.v_basins,'SF', 'double precision',float(self.sf))
+        self.ii = float((0.5*perimeter_mi*basin_length)/(self.drainage_area + np.square(basin_length)))
+        self.add_col_val(self.grass_data.v_basins,'II', 'double precision',float(self.ii))
+
                               
 
     def get_basin_relief(self):
@@ -335,7 +338,99 @@ class RegressionData:
         len_mi = (float(list(gs.parse_command('v.to.db',map=self.grass_data.vlfpds,option='length',units='miles',flags='p'))[1].split('|')[1])*0.75)
         ft_mi = elevation_diff / len_mi
         self.mcl_sl = ft_mi
-        self.add_col_val(self.grass_data.v_basins,'MCL_Ft_pMi', ' double precision',float(ft_mi))
+        self.add_col_val(self.grass_data.v_basins,'MCL_Ft_pMi', 'double precision',float(ft_mi))
         
+class RegressionEquations:
+    def __init__(self,project, grass_data, regression_data,regression_regions:pl.Path):
+        ## Set variables analysis
+        self.regression_regions = regression_regions
+        self.project = project
+        self.grass_data = grass_data
+        self.regression_data = regression_data #point of watershed outlet or polygon watershed boundary
+        self.flows = {}
 
+    def get_regions(self):
+        region_coverage = {}
+        outlet = gpd.read_file(self.grass_data.outlet)
+        basin = gpd.read_file(self.grass_data.basins)
+        regions = gpd.read_file(self.regression_regions).to_crs(outlet.crs)
+        r = regions['manual_v6'].to_list()
+        total_area = basin.iloc[0].geometry.area
+        for i in r:
+            percent = basin.iloc[0].geometry.intersection(regions.loc[regions['manual_v6'] == i].geometry).iloc[0].area/total_area
+            region_coverage[i] = percent
+        self.regional_coverage = region_coverage
+    
+    def apply_equations(self,region,interval):
+        CDA_SqMi = float(self.regression_data.drainage_area)
+        PRISM_yr_mm = float(self.regression_data.PRISMyr_mm)
+        MCS_FtpMi = float(self.regression_data.mcl_sl)
+        FOS = int(self.regression_data.fos)
+        SF = float(self.regression_data.sf)
+        II = float(self.regression_data.ii)
+        CN = int(float(self.regression_data.CN_mean))
+        eqns = {1:
+                {50: 10**-15.54*CDA_SqMi**0.33*PRISM_yr_mm**6.10*MCS_FtpMi**0.67,
+                 20: 10**-18.31*CDA_SqMi**0.47*PRISM_yr_mm**7.07* MCS_FtpMi**0.92, 
+                 10: 10**-19.42*CDA_SqMi**0.55*PRISM_yr_mm**7.44* MCS_FtpMi**1.07,
+                 4: 10**-20.34*CDA_SqMi**0.64*PRISM_yr_mm**7.72* MCS_FtpMi**1.23,
+                 2: 10**-20.80*CDA_SqMi**0.70*PRISM_yr_mm**7.86* MCS_FtpMi**1.34,
+                 1: 10**-21.13*CDA_SqMi**0.75*PRISM_yr_mm**7.94* MCS_FtpMi**1.44,
+                 0.5: 10**-21.35*CDA_SqMi**0.80*PRISM_yr_mm**7.99* MCS_FtpMi**1.54,
+                 0.2: 10**-21.53*CDA_SqMi**0.86*PRISM_yr_mm**8.01* MCS_FtpMi**1.66},
+                2:
+                {50: 10**-15.54*CDA_SqMi**0.33*PRISM_yr_mm**6.10*MCS_FtpMi**0.67,
+                 20: 10**-18.31*CDA_SqMi**0.47*PRISM_yr_mm**7.07* MCS_FtpMi**0.92, 
+                 10: 10**-19.42*CDA_SqMi**0.55*PRISM_yr_mm**7.44* MCS_FtpMi**1.07,
+                 4: 10**-20.34*CDA_SqMi**0.64*PRISM_yr_mm**7.72* MCS_FtpMi**1.23,
+                 2: 10**-20.80*CDA_SqMi**0.70*PRISM_yr_mm**7.86* MCS_FtpMi**1.34,
+                 1: 10**-21.13*CDA_SqMi**0.75*PRISM_yr_mm**7.94* MCS_FtpMi**1.44,
+                 0.5: 10**-21.35*CDA_SqMi**0.80*PRISM_yr_mm**7.99* MCS_FtpMi**1.54,
+                 0.2: 10**-21.53*CDA_SqMi**0.86*PRISM_yr_mm**8.01* MCS_FtpMi**1.66},
+                3:
+                {50: 10**-15.54*CDA_SqMi**0.33*PRISM_yr_mm**6.10*MCS_FtpMi**0.67,
+                 20: 10**-18.31*CDA_SqMi**0.47*PRISM_yr_mm**7.07* MCS_FtpMi**0.92, 
+                 10: 10**-19.42*CDA_SqMi**0.55*PRISM_yr_mm**7.44* MCS_FtpMi**1.07,
+                 4: 10**-20.34*CDA_SqMi**0.64*PRISM_yr_mm**7.72* MCS_FtpMi**1.23,
+                 2: 10**-20.80*CDA_SqMi**0.70*PRISM_yr_mm**7.86* MCS_FtpMi**1.34,
+                 1: 10**-21.13*CDA_SqMi**0.75*PRISM_yr_mm**7.94* MCS_FtpMi**1.44,
+                 0.5: 10**-21.35*CDA_SqMi**0.80*PRISM_yr_mm**7.99* MCS_FtpMi**1.54,
+                 0.2: 10**-21.53*CDA_SqMi**0.86*PRISM_yr_mm**8.01* MCS_FtpMi**1.66},
+                4:
+                {50: 10**-15.54*CDA_SqMi**0.33*PRISM_yr_mm**6.10*MCS_FtpMi**0.67,
+                 20: 10**-18.31*CDA_SqMi**0.47*PRISM_yr_mm**7.07* MCS_FtpMi**0.92, 
+                 10: 10**-19.42*CDA_SqMi**0.55*PRISM_yr_mm**7.44* MCS_FtpMi**1.07,
+                 4: 10**-20.34*CDA_SqMi**0.64*PRISM_yr_mm**7.72* MCS_FtpMi**1.23,
+                 2: 10**-20.80*CDA_SqMi**0.70*PRISM_yr_mm**7.86* MCS_FtpMi**1.34,
+                 1: 10**-21.13*CDA_SqMi**0.75*PRISM_yr_mm**7.94* MCS_FtpMi**1.44,
+                 0.5: 10**-21.35*CDA_SqMi**0.80*PRISM_yr_mm**7.99* MCS_FtpMi**1.54,
+                 0.2: 10**-21.53*CDA_SqMi**0.86*PRISM_yr_mm**8.01* MCS_FtpMi**1.66},
+                5:
+                {50: 10**-15.54*CDA_SqMi**0.33*PRISM_yr_mm**6.10*MCS_FtpMi**0.67,
+                 20: 10**-18.31*CDA_SqMi**0.47*PRISM_yr_mm**7.07* MCS_FtpMi**0.92, 
+                 10: 10**-19.42*CDA_SqMi**0.55*PRISM_yr_mm**7.44* MCS_FtpMi**1.07,
+                 4: 10**-20.34*CDA_SqMi**0.64*PRISM_yr_mm**7.72* MCS_FtpMi**1.23,
+                 2: 10**-20.80*CDA_SqMi**0.70*PRISM_yr_mm**7.86* MCS_FtpMi**1.34,
+                 1: 10**-21.13*CDA_SqMi**0.75*PRISM_yr_mm**7.94* MCS_FtpMi**1.44,
+                 0.5: 10**-21.35*CDA_SqMi**0.80*PRISM_yr_mm**7.99* MCS_FtpMi**1.54,
+                 0.2: 10**-21.53*CDA_SqMi**0.86*PRISM_yr_mm**8.01* MCS_FtpMi**1.66},
+               }
+        flow = eqns[region][interval]
+        return flow
+        
+    def calc_flows(self):
+        tot_pct = 1
+        reccurrence = [50,20,10,4,2,1,0.5,0.2]
+        for interval in reccurrence:
+            flow = 0
+            for region, percent in self.regional_coverage.items():
+                flow += self.apply_equations(region,interval)*percent
+            self.flows[interval] = flow
+    
+    def add_flows_to_outlet(self):
+        outlet = gpd.read_file(self.grass_data.outlet)
+        for interval, val in self.flows.items():
+                outlet[str(interval)] = val
+        outlet.to_file(self.grass_data.outlet,driver = 'GeoJSON')
+                
         
