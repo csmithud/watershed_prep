@@ -23,6 +23,8 @@ class ProjectInformation:
         self.data_dir = pl.Path(os.getcwd()).parent/'data'
         self.vector_dir = self.data_dir/'Vectors'/Project_Area
         self.raster_dir = self.data_dir/'Rasters'/Project_Area
+        self.outlets =  self.vector_dir/'pnt_interest.geojson'
+        self.basins =  self.vector_dir/'wtrshd_interest.geojson'
     
     def create_output_dirs(self):
         if not os.path.exists(self.vector_dir):
@@ -41,7 +43,7 @@ class GrassWatershed:
         self.data_scale = data_scale #other options HUC12, HUC10, HUC8 OR the field name of the source data to be split <-- case sensitive
         self.analysis_scale = analysis_scale #Can be smaller than the data scale
         self.aoi = aoi #     # Value within the data_scale field used for data selection
-        self.basins = self.project.vector_dir/f'aoi_{self.aoi}_basin.geojson' # provide geojson with polygons or the code will create it
+        self.basins = self.project.vector_dir/f'aoi_{self.aoi}_basin.geojson' # provide geojson with points or the code will create it
         self.outlet = self.project.vector_dir/f'aoi_{self.aoi}_outlet.geojson' # provide geojson with polygons or the code will create it with a point
         self.to_headwaters = False #False if only interested in local drainage area
      
@@ -58,6 +60,17 @@ class GrassWatershed:
                 select_data = self.aoi[:int(huc_level)]
         else:
             select_data = self.aoi
+            if self.geometry == 'point':
+                all_pnt = gpd.read_file(self.project.outlets)
+                pnt = all_pnt.loc[all_pnt[self.analysis_scale] == self.aoi]
+                assert len(pnt) == 1, f'there is more than one point with an id of {self.aoi}'
+                pnt.to_file(self.outlet,driver = 'GeoJSON')
+            else:
+                all_wsd = gpd.read_file(self.project.basins)
+                wsd = all_wsd.loc[all_wsd[self.analysis_scale] == self.aoi]
+                assert len(wsd) == 1, f'there is more than one point with an id of {self.aoi}'
+                wsd.to_file(self.basins,driver = 'GeoJSON')
+                              
         self.select_data = select_data
         print(f'base data is {self.select_data}, analysis area is {self.aoi}')
 
@@ -297,10 +310,10 @@ class RegressionData:
 
     def get_basin_relief(self):
         gs.run_command('v.rast.stats', raster=self.grass_data.dem, map=self.grass_data.v_basins,method='max',column='elev')
-        max_elevation = list(gs.parse_command('v.db.select', columns='elev_maximum',map = self.grass_data.v_basins,flags='c').keys())
+        max_elevation = list(gs.parse_command('v.db.select', columns='elev_maximum',map = self.grass_data.v_basins,flags='c').keys())[0]
         
         gs.run_command('v.rast.stats', raster=self.grass_data.dem, map=self.grass_data.v_outlet,method='min',column='elev')
-        outlet_elevation = list(gs.parse_command('v.db.select', columns='elev_minimum',map = self.grass_data.v_outlet,flags='c').keys())
+        outlet_elevation = list(gs.parse_command('v.db.select', columns='elev_minimum',map = self.grass_data.v_outlet,flags='c').keys())[0]
         assert float(max_elevation) > float(outlet_elevation), 'something is wrong'
         self.br = float(max_elevation) - float(outlet_elevation)
         self.add_col_val(self.grass_data.v_basins,'BR_Ft', 'double precision',float(self.br))
@@ -369,33 +382,35 @@ class RegressionEquations:
         SF = float(self.regression_data.sf)
         II = float(self.regression_data.ii)
         CN = int(float(self.regression_data.CN_mean))
+        BR_Ft = float(self.regression_data.br)
+        
         eqns = {1:
-                {50: 10**-15.54*CDA_SqMi**0.33*PRISM_yr_mm**6.10*MCS_FtpMi**0.67,
-                 20: 10**-18.31*CDA_SqMi**0.47*PRISM_yr_mm**7.07* MCS_FtpMi**0.92, 
-                 10: 10**-19.42*CDA_SqMi**0.55*PRISM_yr_mm**7.44* MCS_FtpMi**1.07,
-                 4: 10**-20.34*CDA_SqMi**0.64*PRISM_yr_mm**7.72* MCS_FtpMi**1.23,
-                 2: 10**-20.80*CDA_SqMi**0.70*PRISM_yr_mm**7.86* MCS_FtpMi**1.34,
-                 1: 10**-21.13*CDA_SqMi**0.75*PRISM_yr_mm**7.94* MCS_FtpMi**1.44,
-                 0.5: 10**-21.35*CDA_SqMi**0.80*PRISM_yr_mm**7.99* MCS_FtpMi**1.54,
-                 0.2: 10**-21.53*CDA_SqMi**0.86*PRISM_yr_mm**8.01* MCS_FtpMi**1.66},
+                {50: 10**-30.49 * CDA_SqMi**0.14 * PRISM_yr_mm**5.63 * CN**6.53 * BR_Ft**1.71,
+                 20: 10**-37.30 * CDA_SqMi**0.06 * PRISM_yr_mm**5.91 * CN**10.05 * BR_Ft**1.71, 
+                 10: 10**-40.55 * CDA_SqMi**0.02 * PRISM_yr_mm**6.19 * CN**11.53 * BR_Ft**1.72,
+                 4: 10**-43.85 * CDA_SqMi**-0.02 * PRISM_yr_mm**6.58 * CN**12.85 * BR_Ft**1.73,
+                 2: 10**-45.90 * CDA_SqMi**-0.05 * PRISM_yr_mm**6.89  * CN**13.58 * BR_Ft**1.75,
+                 1: 10**-47.66 * CDA_SqMi**-0.08 * PRISM_yr_mm**7.19 * CN**14.14 * BR_Ft**1.77,
+                 0.5: 10**-49.22 * CDA_SqMi**-0.11 * PRISM_yr_mm**7.50 * CN**14.58 * BR_Ft**1.79,
+                 0.2: 10**-51.03 * CDA_SqMi**-0.14 * PRISM_yr_mm**7.90 * CN**15.02 * BR_Ft**1.82},
                 2:
-                {50: 10**-15.54*CDA_SqMi**0.33*PRISM_yr_mm**6.10*MCS_FtpMi**0.67,
-                 20: 10**-18.31*CDA_SqMi**0.47*PRISM_yr_mm**7.07* MCS_FtpMi**0.92, 
-                 10: 10**-19.42*CDA_SqMi**0.55*PRISM_yr_mm**7.44* MCS_FtpMi**1.07,
-                 4: 10**-20.34*CDA_SqMi**0.64*PRISM_yr_mm**7.72* MCS_FtpMi**1.23,
-                 2: 10**-20.80*CDA_SqMi**0.70*PRISM_yr_mm**7.86* MCS_FtpMi**1.34,
-                 1: 10**-21.13*CDA_SqMi**0.75*PRISM_yr_mm**7.94* MCS_FtpMi**1.44,
-                 0.5: 10**-21.35*CDA_SqMi**0.80*PRISM_yr_mm**7.99* MCS_FtpMi**1.54,
-                 0.2: 10**-21.53*CDA_SqMi**0.86*PRISM_yr_mm**8.01* MCS_FtpMi**1.66},
+                {50: 10**-17.35 * CDA_SqMi**1.06 * MCS_FtpMi**1.77 * CN**8.71,
+                 20: 10**-15.91 * CDA_SqMi**0.97 * MCS_FtpMi**1.83 * CN**8.22, 
+                 10: 10**-14.67 * CDA_SqMi**0.93 * MCS_FtpMi**1.80  * CN**7.73,
+                 4: 10**-12.99 * CDA_SqMi**0.88 * MCS_FtpMi**1.74 * CN**7.04,
+                 2: 10**-11.73 * CDA_SqMi**0.85 * MCS_FtpMi**1.68 * CN**6.50,
+                 1: 10**-10.47 * CDA_SqMi**0.82 * MCS_FtpMi**1.62 * CN**5.96,
+                 0.5: 10**-9.23 * CDA_SqMi**0.79 * MCS_FtpMi**1.55 * CN**5.42,
+                 0.2: 10**-7.62 * CDA_SqMi**0.75 * MCS_FtpMi**1.46 * C**4.71},
                 3:
-                {50: 10**-15.54*CDA_SqMi**0.33*PRISM_yr_mm**6.10*MCS_FtpMi**0.67,
-                 20: 10**-18.31*CDA_SqMi**0.47*PRISM_yr_mm**7.07* MCS_FtpMi**0.92, 
-                 10: 10**-19.42*CDA_SqMi**0.55*PRISM_yr_mm**7.44* MCS_FtpMi**1.07,
-                 4: 10**-20.34*CDA_SqMi**0.64*PRISM_yr_mm**7.72* MCS_FtpMi**1.23,
-                 2: 10**-20.80*CDA_SqMi**0.70*PRISM_yr_mm**7.86* MCS_FtpMi**1.34,
-                 1: 10**-21.13*CDA_SqMi**0.75*PRISM_yr_mm**7.94* MCS_FtpMi**1.44,
-                 0.5: 10**-21.35*CDA_SqMi**0.80*PRISM_yr_mm**7.99* MCS_FtpMi**1.54,
-                 0.2: 10**-21.53*CDA_SqMi**0.86*PRISM_yr_mm**8.01* MCS_FtpMi**1.66},
+                {50: 10**-27.23 * CDA_SqMi**0.89 * PRISM_yr_mm**6.18 * MCS_FtpMi**1.00 * CN**5.16,
+                 20: 10**-22.55 * CDA_SqMi**0.82 * PRISM_yr_mm**5.55 * MCS_FtpMi**0.89 * CN**3.97, 
+                 10: 10**-20.10 * CDA_SqMi**0.79 * PRISM_yr_mm**5.26 * MCS_FtpMi**0.83 * CN**3.28,
+                 4: 10**-17.56 * CDA_SqMi**0.75 * PRISM_yr_mm**4.97 * MCS_FtpMi**0.76 * CN**2.54,
+                 2: 10**-15.97 * CDA_SqMi**0.73 * PRISM_yr_mm**4.79 * MCS_FtpMi**0.72 * CN**2.08,
+                 1: 10**-14.56 * CDA_SqMi**0.70 * PRISM_yr_mm**4.63 * MCS_FtpMi**0.68 * CN**1.65,
+                 0.5: 10**-13.27 * CDA_SqMi**0.68 * PRISM_yr_mm**4.51 * MCS_FtpMi**0.64 * CN**1.25,
+                 0.2: 10**-11.72 * CDA_SqMi**0.66 * PRISM_yr_mm**4.36 * MCS_FtpMi**0.60 * CN**0.75},                
                 4:
                 {50: 10**-15.54*CDA_SqMi**0.33*PRISM_yr_mm**6.10*MCS_FtpMi**0.67,
                  20: 10**-18.31*CDA_SqMi**0.47*PRISM_yr_mm**7.07* MCS_FtpMi**0.92, 
@@ -406,14 +421,14 @@ class RegressionEquations:
                  0.5: 10**-21.35*CDA_SqMi**0.80*PRISM_yr_mm**7.99* MCS_FtpMi**1.54,
                  0.2: 10**-21.53*CDA_SqMi**0.86*PRISM_yr_mm**8.01* MCS_FtpMi**1.66},
                 5:
-                {50: 10**-15.54*CDA_SqMi**0.33*PRISM_yr_mm**6.10*MCS_FtpMi**0.67,
-                 20: 10**-18.31*CDA_SqMi**0.47*PRISM_yr_mm**7.07* MCS_FtpMi**0.92, 
-                 10: 10**-19.42*CDA_SqMi**0.55*PRISM_yr_mm**7.44* MCS_FtpMi**1.07,
-                 4: 10**-20.34*CDA_SqMi**0.64*PRISM_yr_mm**7.72* MCS_FtpMi**1.23,
-                 2: 10**-20.80*CDA_SqMi**0.70*PRISM_yr_mm**7.86* MCS_FtpMi**1.34,
-                 1: 10**-21.13*CDA_SqMi**0.75*PRISM_yr_mm**7.94* MCS_FtpMi**1.44,
-                 0.5: 10**-21.35*CDA_SqMi**0.80*PRISM_yr_mm**7.99* MCS_FtpMi**1.54,
-                 0.2: 10**-21.53*CDA_SqMi**0.86*PRISM_yr_mm**8.01* MCS_FtpMi**1.66},
+                {50: 10**-27.01 * CDA_SqMi**0.99 * PRISM_yr_mm**6.56 * MCS_FtpMi**1.36 * CN**4.37 * SF**-0.46,
+                 20: 10**-31.41 * CDA_SqMi**0.92 * PRISM_yr_mm**7.03 * MCS_FtpMi**1.28 * CN**6.33 * SF**-0.45, 
+                 10: 10**-33.59 * CDA_SqMi**0.90 * PRISM_yr_mm**7.32 * MCS_FtpMi**1.25 * CN**7.20 * SF**-0.42,
+                 4: 10**-35.76 * CDA_SqMi**0.88 * PRISM_yr_mm**7.66 * MCS_FtpMi**1.23 * CN**7.96  * SF**-0.38,
+                 2: 10**-37.55 * CDA_SqMi**0.84 * PRISM_yr_mm**8.06 * MCS_FtpMi**1.34 * CN**8.25,
+                 1: 10**-38.63 * CDA_SqMi**0.84 * PRISM_yr_mm**8.26 * MCS_FtpMi**1.33 * CN**8.59,
+                 0.5: 10**-39.58 * CDA_SqMi**0.84 * PRISM_yr_mm**8.45 * MCS_FtpMi**1.32 * CN**8.86,
+                 0.2: 10**-40.67 * CDA_SqMi**0.85 * PRISM_yr_mm**8.70 * MCS_FtpMi**1.31 * CN**9.13},
                }
         flow = eqns[region][interval]
         return flow
