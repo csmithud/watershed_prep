@@ -23,7 +23,10 @@ class ProjectInformation:
         self.data_dir = pl.Path(os.getcwd()).parent/'data'
         self.vector_dir = self.data_dir/'Vectors'/Project_Area
         self.raster_dir = self.data_dir/'Rasters'/Project_Area
-        self.outlets =  self.vector_dir/'pnt_interest.geojson'
+        
+        ##user defined inputs
+        #self.outlets =  self.vector_dir/'pnt_interest.geojson'
+        self.outlets =  self.vector_dir/'gages.geojson'
         self.basins =  self.vector_dir/'wtrshd_interest.geojson'
     
     def create_output_dirs(self):
@@ -163,8 +166,8 @@ class GrassWatershed:
         gs.run_command('g.region',raster = self.dem,align=self.dem,zoom=self.dem)
         gs.run_command('g.region',res = resample*np.sqrt(self.cell_area))
         self.get_threshold()
-        self.threshold_rough = self.threshold/resample
-        self.search_radius_rough = self.search_radius/resample
+        self.threshold_rough = self.threshold/resample**2
+        self.search_radius_rough = self.search_radius/resample**2
         if f'r_streams_{self.project.Project_Area}_rough'+"@PERMANENT" in self.grass_maps['raster'] and not overwrite:
             print('using existing project-wide watershed data for the project area')
             self.rough_created = True
