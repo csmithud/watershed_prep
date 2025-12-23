@@ -1,7 +1,9 @@
 from src.grass_functions import *
 
 class ProjectInformation:
-    
+    '''
+    Project level information
+    '''
     def __init__(self,Project_Area,sr,res,dem_preprocessed,dem_base_name,aligned,carved):
         #set project level variables
         self.Project_Area = Project_Area
@@ -30,6 +32,11 @@ class ProjectInformation:
         self.basins =  self.vector_dir/'wtrshd_interest.geojson'
     
     def create_output_dirs(self):
+        '''
+        internal function to create output directories if they do not exist
+        
+        :param self: project object
+        '''
         if not os.path.exists(self.vector_dir):
             os.makedirs(self.vector_dir)
         if not os.path.exists(self.raster_dir):
@@ -37,7 +44,9 @@ class ProjectInformation:
 
 
 class GrassWatershed:
-
+    '''
+    GrassWatershed object to handle watershed delineation and analysis in GRASS GIS
+    '''
     #watershed specific
     def __init__(self,project, data_scale,analysis_scale,aoi, geometry):
         ## Set variables analysis
@@ -53,8 +62,11 @@ class GrassWatershed:
     #hone in on the area of importance for loops
     def set_grass_selection(self):
         '''
+        get area of interest based on data scale and analysis scale
         
+        :param self: grass watershed object
         '''
+
         if self.data_scale.find('HUC') >= 0:
             huc_level = re.findall("[0-9]+",self.data_scale)[0]
             if huc_level == str(len(aoi)):
@@ -79,7 +91,9 @@ class GrassWatershed:
 
     def set_dem_name(self):
         '''
+        leverage dem prep naming convention to set dem name in grass
         
+        :param self: grass watershed object
         '''
         if self.project.dem_preprocessed:
             dem = f'{self.project.dem_base_name}_{self.select_data}'
@@ -90,9 +104,14 @@ class GrassWatershed:
         else:
             dem = self.project.dem_base_name
         self.dem = dem
-        assert self.dem+"@PERMANENT" in self.grass_maps['raster'], 'Check that dem exists in GRASS map layers'
+        assert self.dem+"@PERMANENT" in self.grass_maps['raster'], 'Check that dem exists in GRASS map layers. If not, run the dem prep notebook first (https://github.com/csmithud/dem_prep)'
 
     def assign_grass_variables(self):
+        '''
+        set standard grass watershed variable names
+        
+        :param self: grass watershed object
+        '''
         #initiate variables
         self.accum = f'accum_{self.select_data}'
         self.drain_dir = f'drain_dir_{self.select_data}'
@@ -107,6 +126,9 @@ class GrassWatershed:
     
     def reset_proj_region(self):
         '''
+        reset grass region to project area
+                
+        :param self: GrassWatershed object
         '''
         self.list_existing_grass(print_it=False)
         #remove mask if it exists and reset region
@@ -115,6 +137,12 @@ class GrassWatershed:
         gs.run_command('g.region',raster = self.dem,align=self.dem,zoom=self.dem)
     
     def list_existing_grass(self,print_it=True):
+        '''
+        function to get dictionary of existing grass layers that are required to meet code assertions
+        
+        :param self: GrassWatershed object
+        :param print_it: True / False print out list of existing grass layers
+        '''
         #List Existing Files: Vectors and Rasters
         layers = {'vector':[],'raster':[]}
         if print_it:
@@ -134,6 +162,9 @@ class GrassWatershed:
 
     def get_grass_grid_size(self):
         '''
+        get grass grid size and units of current region
+
+        :param self: GrassWatershed object
         '''
         reg = gs.parse_command('g.region', raster=self.dem, flags='pgm',align=self.dem)
         cell_area = (float(reg.nsres)*float(reg.ewres))
@@ -148,6 +179,9 @@ class GrassWatershed:
     
     def get_threshold(self):
         '''
+        get stream delineation threshold and stream search radius for watershed analysis
+        
+        :param self: GrassWatershed object
         '''
         if self.hunits == 'ft':
             self.threshold = self.project.threshold*27878400/self.cell_area
@@ -159,6 +193,11 @@ class GrassWatershed:
     
     def get_rough_watershed_data(self,resample=10,overwrite=False):
         '''
+        get rough watershed delineation quickly to reset the region for detailed delineation and analysis
+
+        :param self: GrassWatershed object
+        :param resample: scale factor for region resolution resampling (applied in each direction x/y)
+        :param overwrite: True / False overwrite existing grass layers
         '''
         self.list_existing_grass(print_it=False)
         if 'MASK@PERMANENT' in self.grass_maps['raster']:
@@ -190,6 +229,11 @@ class GrassWatershed:
            
     def get_basin_area(self,overwrite=False):
         '''
+        takes input point or polygon and snaps to nearest stream and delineates the watershed.
+        grass can be fickle with masks and regional resets so the code has redundant lines of code to ensure that the region and mask are reset before each step
+        
+        :param self: GrassWatershed object
+        :param overwrite: True / False overwrite existing grass layers
         '''
         assert self.geometry in ('point','polygon'), 'Geometry type must be a point or polygon'
         if self.geometry == 'point':
@@ -228,14 +272,7 @@ class GrassWatershed:
         gs.run_command('g.region',raster = self.dem,align=self.dem,zoom=self.dem)
 
         #get outlet point by identifying the highest accumulation value along the perimeter.
-        gs.run_command('r.watershed', elevation=self.dem, drainage = self.drain_dir, accumulation = self.accum, flags= 'sabm',memory = self.project.max_mem) ##note that this is in feet
-        # gs.run_command('v.rast.stats', raster=self.accum, map=f'aoi_{self.select_data}_aoi_raw',method='max',column='accum')
-        # max_accum = list(gs.parse_command('v.db.select', columns='accum_maximum',map = f'aoi_{self.select_data}_aoi_raw',flags='c').keys())
-        # for outlet_accum in max_accum:
-        #     gs.run_command('r.mapcalc',expression = f'{self.r_outlet} = if({self.accum} == {outlet_accum},{self.select_data},null())')
-        #     gs.run_command('r.to.vect', input=self.r_outlet, output=self.v_outlet, type='point')
-        #     gs.run_command('v.out.ogr', input=  self.v_outlet ,type = 'point',output = self.outlet, format = 'GeoJSON')
-        
+        gs.run_command('r.watershed', elevation=self.dem, drainage = self.drain_dir, accumulation = self.accum, flags= 'sabm',memory = self.project.max_mem) ##note that this is in feet 
         gs.run_command('r.stream.extract', elevation=self.dem, accumulation = self.accum, threshold =self.threshold, direction= self.drain_dir,
                stream_raster = self.r_streams,stream_vector = self.v_streams, memory = self.project.max_mem)
         #reimporting in case of exclusion via raster mask
@@ -255,13 +292,31 @@ class GrassWatershed:
         
 
 class RegressionData:
-        
+    '''
+    RegressionData object to handle watershed parameter calculation and analysis in GRASS GIS
+    '''
     def __init__(self,project, grass_data):
+        '''
+        initialize RegressionData object with project and grass_data parameters
+        
+        :param self: regression data object
+        :param project: project object
+        :param grass_data: grass watershed object
+        '''
         ## Set variables analysis
         self.project = project
         self.grass_data = grass_data #point of watershed outlet or polygon watershed boundary
     
     def add_col_val(self,grass_layer,col,col_type,val):
+        '''
+        Adding a column and value to a grass layer with a known / calculated value
+        
+        :param self: regression data object
+        :param grass_layer: layer to be updated (must be a vector)
+        :param col: column name
+        :param col_type: type of column (e.g., string, integer, double precision but in GRASS format)
+        :param val: value to be added to the column
+        '''
         exist_cols = []
         for column in list(gs.parse_command('v.db.connect',map=grass_layer,flags='c')):
             exist_cols.append(column.split('|')[1])
@@ -270,29 +325,46 @@ class RegressionData:
         gs.run_command('v.db.update',map=grass_layer,layer=1,column=col,value=int(val))
     
     def set_aoi(self):
+        '''
+        set the project area of interest (AOI) in GRASS GIS using the detailed watershed delineation data
+        
+        :param self: regression data object
+        '''
         self.grass_data.reset_proj_region()
         gs.run_command('r.mask',raster = self.grass_data.r_basins,overwrite=True)
         gs.run_command('g.region',raster = self.grass_data.dem,align=self.grass_data.dem,zoom=self.grass_data.dem)
     
     def get_raster_avg(self,tif,col):
+        '''
+        calculate the average value of a raster layer within the watershed area
+
+        :param self: regression data object
+        :param tif: input raster file in GRASS
+        :param col: column name from the rast stats command output
+        '''
         gs.run_command('r.import',input=tif,output=col,resample='bilinear',overwrite=True)
         gs.run_command('v.rast.stats', raster=col, map=self.grass_data.v_basins,method='average',column=col,flags='c')
         avg = list(gs.parse_command('v.db.select', columns=f'{col}_average',map = self.grass_data.v_basins,flags='c').keys())
         return avg[0]
         
     def get_drainage_area(self):
-        # raster_basin = gs.parse_command('r.info',map=self.grass_data.r_basins,flags='gs')
-        # assert self.grass_data.hunits in ['ft','m'], "no units horizontal units set"
-        # if self.grass_data.hunits = 'ft':
-        #     area = (float(raster_basin['n'])*float(raster_basin['nsres'])*float(raster_basin['ewres']))/(2590136.75519263*np.square(3.28084))
-        # else:
-        #     area = (float(raster_basin['n'])*float(raster_basin['nsres'])*float(raster_basin['ewres']))/2590136.75519263 #sq m to sq mi
+        '''
+        calculate the total drainage area of the watershed and add it to the basin vector layer
+        
+        :param self: regression data object
+        '''
         area_sqmi = float(list(gs.parse_command('v.to.db',map=self.grass_data.v_basins,option='area',flags='p',
                                                     units='miles'))[1].split('|')[1])
         self.drainage_area = area_sqmi
         self.add_col_val(self.grass_data.v_basins,'TDA_SqMi', 'double precision',float(self.drainage_area))
     
     def get_basin_len(self):
+        '''
+        calculate the basin length using shapely (outside of grass).
+        this process is input to the formula used to calculate the basin shape factor (SF) and basin irregularity index (II) in the literature.   
+
+        :param self: regression data object
+        '''
         #do shapely stuff
         basin = gpd.read_file(self.grass_data.basins)
         outlet = gpd.read_file(self.grass_data.outlet)
@@ -311,6 +383,11 @@ class RegressionData:
         return basin_length
     
     def get_basin_shape(self):
+        '''
+        Calculate the basin shape factor (SF) and basin irregularity index (II) using the basin length and drainage area
+
+        :param self: regression data object
+        '''
         perimeter_mi = float(list(gs.parse_command('v.to.db',map=self.grass_data.v_basins,option='perimeter',flags='p',
                                                     units='miles'))[1].split('|')[1])
         basin_length = self.get_basin_len() #miles line drawn between maximum distance along basin perimeter from outlet to minimum distance along basin perimeter to outlet
@@ -323,6 +400,11 @@ class RegressionData:
                               
 
     def get_basin_relief(self):
+        '''
+        use grass to get the maximum and minimum elevation values within the watershed area and calculate the basin relief (BR)
+
+        :param self: regression data object
+        '''
         gs.run_command('v.rast.stats', raster=self.grass_data.dem, map=self.grass_data.v_basins,method='max',column='elev')
         max_elevation = list(gs.parse_command('v.db.select', columns='elev_maximum',map = self.grass_data.v_basins,flags='c').keys())[0]
         
@@ -333,6 +415,11 @@ class RegressionData:
         self.add_col_val(self.grass_data.v_basins,'BR_Ft', 'double precision',float(self.br))
     
     def get_stream_order(self):
+        '''
+        Utilize grass commands to calculate the stream order information of the watershed and add it to the basin vector layer
+
+        :param self: regression data object
+        '''
         gs.run_command('g.region',raster = self.grass_data.r_streams,align=self.grass_data.r_streams)
         gs.run_command('r.stream.order',stream_rast = self.grass_data.r_streams,direction = self.grass_data.drain_dir,
                        strahler = self.grass_data.r_streams_order, memory=self.project.max_mem)
@@ -343,6 +430,12 @@ class RegressionData:
         self.add_col_val(self.grass_data.v_basins,'FOS', 'integer',int(num_fos))
         
     def get_main_ch_slope(self):
+        '''
+        Main channel slope as defined by literature.
+        This includes calculating the the longest flow path from the outlet to the edge of the basin and calculating the slope of that path at the specified intervals (at 10% and 85%).
+
+        :param self: regression data object
+        '''
         #MCS_FtpMia
         self.grass_data.lfpds = self.grass_data.r_streams +'lfpds'
         self.grass_data.vlfpds = self.grass_data.r_streams +'v_lfpds'
@@ -377,6 +470,11 @@ class RegressionEquations:
         self.flows = {}
 
     def get_regions(self):
+        '''
+        Identify the percentage of the basin that falls within each regresssion region defined as part of the 2025 study.
+        
+        :param self: regression equations object
+        '''
         region_coverage = {}
         outlet = gpd.read_file(self.grass_data.outlet)
         basin = gpd.read_file(self.grass_data.basins)
@@ -389,6 +487,17 @@ class RegressionEquations:
         self.regional_coverage = region_coverage
     
     def apply_equations(self,region,interval):
+        '''
+        creates a dictionary of flow values based on the regression equations for a given region and interval.
+
+        Also saves the explanatory variables into a recognizable format for application to the regression equations.
+
+        Note that FOS and II are not used in the regression equations but are included in the output for reference in case the equations change.
+
+        :param self: regression equations object
+        :param region: regression region (e.g., 1, 2, that refer back to the names such as E, NE, etc.)
+        :param interval: recurrence frequency in percent annual chance.
+        '''
         CDA_SqMi = float(self.regression_data.drainage_area)
         PRISM_yr_mm = float(self.regression_data.PRISMyr_mm)
         MCS_FtpMi = float(self.regression_data.mcl_sl)
@@ -448,6 +557,11 @@ class RegressionEquations:
         return flow
         
     def calc_flows(self):
+        '''
+        Performs the calculation of the flow values for each interval based on the regression equations and the percentage of the basin that falls within each regression region.
+
+        :param self: regression equations object
+        '''
         tot_pct = 1
         reccurrence = [50,20,10,4,2,1,0.5,0.2]
         for interval in reccurrence:
@@ -457,6 +571,11 @@ class RegressionEquations:
             self.flows[interval] = flow
     
     def add_flows_to_outlet(self):
+        '''
+        saves the resulting flow values to the outlet point file.
+
+        :param self: regression equations object
+        '''
         outlet = gpd.read_file(self.grass_data.outlet)
         for interval, val in self.flows.items():
                 outlet[str(interval)] = val
